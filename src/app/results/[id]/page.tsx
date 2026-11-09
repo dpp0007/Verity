@@ -121,7 +121,7 @@ export default function ResultPage({ params }: { params: Promise<{ id: string }>
         <>
           {v.outcome === 'partially_verified' && <Notice tone="warn" title="Partially verified">Some important fields could not be confirmed. Review the limitations below and confirm with the official source.</Notice>}
 
-          <section className="card-strong rise">
+          <section className="card-strong rise overflow-hidden">
             <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-line p-5">
               <Stamp value={r.record.status} />
               <div className="flex flex-wrap items-center gap-2"><Badge value={v.outcome} />{v.confidence && <Badge value={v.confidence} label={`${v.confidence} confidence`} />}</div>
@@ -170,7 +170,7 @@ export default function ResultPage({ params }: { params: Promise<{ id: string }>
             {v.evidence.length === 0 ? <p className="text-mute">No source excerpts were captured.</p> : (
               <ul className="grid gap-2.5 sm:grid-cols-2">
                 {v.evidence.map((e, i) => (
-                  <li key={i} className="border border-line bg-sunk p-3">
+                  <li key={i} className="rounded-xl border border-line bg-sunk p-3">
                     <p className="mb-1 flex items-center gap-2 text-xs"><span className="eyebrow">{e.fields.join(', ')}</span>
                       <span className={`tone-${e.validated ? 'ok' : 'mute'} inline-flex items-center gap-1`}><span className="sq" style={{ background: 'var(--t)' }} aria-hidden />{e.validated ? 'confirmed on fetched page' : 'not independently confirmed'}</span></p>
                     <blockquote className="mono whitespace-pre-wrap break-words">{e.excerpt}</blockquote>

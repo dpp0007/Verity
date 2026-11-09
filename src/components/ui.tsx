@@ -11,7 +11,7 @@ export const toneOf = (v: string | null | undefined) => TONE[v ?? 'unknown'] ?? 
 export function Badge({ value, label }: { value: string | null | undefined; label?: string }) {
   const v = value ?? 'unknown';
   return (
-    <span className={`tone-${toneOf(v)} inline-flex items-center gap-1.5 border border-line bg-panel px-2 py-0.5 text-xs font-medium whitespace-nowrap`}>
+    <span className={`tone-${toneOf(v)} inline-flex items-center gap-1.5 rounded-full border border-line bg-panel px-2.5 py-0.5 text-xs font-medium whitespace-nowrap`}>
       <span className="sq" style={{ background: 'var(--t)' }} aria-hidden />
       {label ?? v.replace(/_/g, ' ')}
     </span>
@@ -50,7 +50,7 @@ export function Field({ label, hint, children, htmlFor }: { label: string; hint?
 export function Notice({ tone = 'warn', title, children }: { tone?: 'warn' | 'bad' | 'ok' | 'info'; title?: string; children?: ReactNode }) {
   const t = tone === 'info' ? 'mute' : tone;
   return (
-    <div role={tone === 'bad' ? 'alert' : 'status'} className={`tone-${t} flex min-w-0 gap-3 border border-line p-3.5`} style={{ background: 'var(--tb)', borderLeft: '4px solid var(--t)' }}>
+    <div role={tone === 'bad' ? 'alert' : 'status'} className={`tone-${t} flex min-w-0 gap-3 rounded-xl border border-line p-3.5`} style={{ background: 'var(--tb)', boxShadow: 'inset 3px 0 0 var(--t)' }}>
       <div className="min-w-0 break-words">
         {title && <p className="font-semibold">{title}</p>}
         {children && <div className="text-[13.5px]">{children}</div>}

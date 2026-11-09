@@ -23,6 +23,9 @@ function Glyph({ cells, on }: { cells: readonly number[]; on: boolean }) {
   );
 }
 
+/** Reserved, transitional and obsolete ISO codes that Intl still names: not places with a company register. */
+const NOT_COUNTRIES = new Set(['AC', 'CP', 'DG', 'EA', 'IC', 'TA', 'EU', 'EZ', 'UN', 'QO', 'XA', 'XB', 'AN', 'BU', 'CS', 'DD', 'DY', 'FX', 'HV', 'NH', 'RH', 'SU', 'TP', 'UK', 'VD', 'YD', 'YU', 'ZR']);
+
 export default function VerifyPage() {
   const router = useRouter();
   const [regs, setRegs] = useState<Reg[] | null>(null);
@@ -42,9 +45,9 @@ export default function VerifyPage() {
     const out: Array<[string, string]> = [];
     for (let a = 65; a <= 90; a++) for (let b = 65; b <= 90; b++) {
       const c = String.fromCharCode(a, b), n = countryName(c);
-      if (n && n !== c && !/unknown/i.test(n)) out.push([c, n]);
+      if (n && n !== c && !/unknown/i.test(n) && !NOT_COUNTRIES.has(c)) out.push([c, n]);
     }
-    return out.sort((x, y) => x[1].localeCompare(y[1]));
+    return out.filter(([, n], i) => out.findIndex(([, m]) => m === n) === i).sort((x, y) => x[1].localeCompare(y[1]));
   }, []);
   const countryList: Array<[string, string]> = isCompany ? allCountries : [...new Set(forType.map((r) => r.country))].map((c) => [c, COUNTRY[c] ?? countryName(c)]);
   const country = countryList.some(([c]) => c === f.country) ? f.country : isCompany ? 'GB' : countryList[0]?.[0] ?? '';
@@ -81,11 +84,11 @@ export default function VerifyPage() {
     <div>
       <header className="mb-8 max-w-2xl">
         <p className="eyebrow mb-2">Official records verification</p>
-        <h1 className="text-3xl font-bold leading-tight sm:text-4xl">Trust, verified <span className="bg-lime px-1 text-lime-ink">at the source.</span></h1>
+        <h1 className="text-3xl font-bold leading-tight sm:text-4xl">Trust, verified <span className="rounded-lg bg-lime px-2 text-lime-ink">at the source.</span></h1>
         <p className="mt-3 text-[15px] text-mute">Check a licence or company registration against the official register, see exactly where the answer came from, and get alerted if it changes. No account needed.</p>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_300px]">
         <section aria-label="Verification form">
           {loadErr && <Notice tone="bad" title="Could not load supported registries">{loadErr}</Notice>}
           {!regs && !loadErr && <Loading label="Loading supported registries" />}
@@ -93,7 +96,7 @@ export default function VerifyPage() {
             <form onSubmit={submit} className="card-strong grid gap-6 p-5 sm:p-6" noValidate>
               <fieldset>
                 <legend className="label">1 · What are you checking?</legend>
-                <div className="grid gap-2.5 sm:grid-cols-3" role="radiogroup">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-2.5" role="radiogroup">
                   {TYPES.map((t) => (
                     <label key={t.id} className="choice">
                       <input type="radio" name="record_type" value={t.id} checked={f.record_type === t.id} onChange={set('record_type')} />
@@ -179,21 +182,6 @@ export default function VerifyPage() {
                 <li key={q} className="flex gap-3"><span className="mono mt-0.5 text-mute">0{i + 1}</span><span>{q}</span></li>
               ))}
             </ol>
-          </div>
-          <div className="card p-5">
-            <h2 className="eyebrow mb-3">Coverage</h2>
-            <ul className="grid gap-2 text-[13.5px]">
-              <li className="flex items-start gap-2"><span className="sq mt-1.5" style={{ background: 'var(--lime)', outline: '1px solid var(--ink)' }} aria-hidden /><span><b>Companies, any country</b><br /><span className="hint">Official register found automatically</span></span></li>
-              {(regs ?? []).filter((r) => r.record_types.every((t) => t !== 'company_registration') || r.country === 'GB').map((r) => (
-                <li key={r.id} className="flex items-start gap-2">
-                  <span className="sq mt-1.5" style={{ background: r.blocked ? 'var(--bad)' : r.method === 'vendor' ? 'var(--warn)' : 'var(--ok)' }} aria-hidden />
-                  <span><span className="mono">{r.country}{r.regions.length ? `-${r.regions[0]}` : ''}</span> · {r.name.split(' — ')[0].replace(/ \(.*\)/, '')}
-                    {r.blocked && <span className="hint block">Name search blocked (CAPTCHA); licence number works</span>}</span>
-                </li>
-              ))}
-              <li className="flex items-start gap-2"><span className="sq mt-1.5" style={{ background: 'var(--warn)' }} aria-hidden /><span><span className="mono">IN</span> · Companies via licensed data provider</span></li>
-            </ul>
-            <p className="hint mt-3">Unsupported places are refused, never searched on arbitrary websites.</p>
           </div>
         </aside>
       </div>
