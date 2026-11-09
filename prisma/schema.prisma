@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// SQLite keeps local setup zero-config. For PostgreSQL change `provider` and DATABASE_URL;
+// JSON is stored as text so the schema is portable.
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Verification {
+  id             String   @id
+  ownerId        String
+  kind           String   @default("verify") // verify | recheck
+  parentId       String?
+  monitorId      String?
+  subjectType    String
+  name           String
+  recordType     String
+  country        String
+  region         String?
+  licenseNumber  String?
+  sourceUrlInput String?
+  inputHash      String
+  idempotencyKey String?
+  registryId     String?
+  registryJson   String? // discovered registry (dyn-*) config; configured registries are looked up by id
+  state          String   @default("queued") // queued | running | awaiting_selection | completed | failed
+  stage          String?  // finding_source | searching_registry | comparing_records | verifying_evidence
+  outcome        String?
+  resultJson     String?
+  errorJson      String?
+  providerRunIds String   @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  candidates     Candidate[]
+  evidence       EvidenceSnapshot[]
+
+  @@unique([ownerId, idempotencyKey])
+  @@index([ownerId, createdAt])
+  @@index([state])
+}
+
+model Candidate {
+  id             String   @id
+  verificationId String
+  dataJson       String
+  selected       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  verification   Verification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+
+  @@index([verificationId])
+}
+
+model EvidenceSnapshot {
+  id             String   @id
+  verificationId String
+  url            String
+  fetchedAt      DateTime
+  contentHash    String?
+  excerptsJson   String
+  text           String?
+  verification   Verification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+
+  @@index([verificationId])
+}
+
+model Monitor {
+  id             String   @id
+  ownerId        String
+  verificationId String
+  providerId     String?  @unique
+  dedupeKey      String?  @unique // ownerId:verificationId while not removed
+  status         String   // creating | active | paused | failed | removed
+  scheduleCron   String
+  configJson     String
+  webhookUrl     String?
+  webhookActive  Boolean  @default(false)
+  purpose        String
+  subjectName    String
+  recordType     String
+  country        String
+  region         String?
+  registryName   String
+  sourceUrl      String
+  baselineJson   String   // last verified normalized record (the comparison baseline)
+  currentStatus  String
+  lastCheckedAt  DateTime?
+  lastSuccessAt  DateTime?
+  lastChangeAt   DateTime?
+  lastError      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  runs           MonitorRun[]
+  alerts         Alert[]
+
+  @@index([ownerId, status])
+}
+
+model MonitorRun {
+  id            String   @id
+  monitorId     String
+  providerRunId String?
+  source        String   // baseline | webhook | manual
+  outcome       String   // baseline | unchanged | changed | irrelevant_change | recheck_pending | error
+  ok            Boolean
+  error         String?
+  diff          String?
+  createdAt     DateTime @default(now())
+  monitor       Monitor  @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([monitorId, createdAt])
+}
+
+model Alert {
+  id          String   @id
+  monitorId   String
+  ownerId     String
+  field       String
+  previous    String?
+  next        String?
+  sourceUrl   String
+  evidenceJson String
+  runId       String?
+  detectedAt  DateTime @default(now())
+  monitor     Monitor  @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, detectedAt])
+}
+
+model ActivityEvent {
+  id        String   @id
+  ownerId   String
+  type      String
+  refsJson  String   @default("{}")
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([ownerId, createdAt])
+}
+
+model WebhookEvent {
+  dedupeKey  String   @id
+  receivedAt DateTime @default(now())
+}
