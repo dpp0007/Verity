@@ -8,15 +8,18 @@
 import './loadEnv';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { createClient } from '@libsql/client';
 
 (async () => {
-  const url = process.env.TURSO_DATABASE_URL;
+  const url = process.env.VERITY_DATABASE_URL || process.env.TURSO_DATABASE_URL;
   if (!url) {
     if (process.argv.includes('--if-configured')) { console.log('TURSO_DATABASE_URL not set: skipping hosted migrations'); return; } // local builds
     console.error('Set TURSO_DATABASE_URL (and TURSO_AUTH_TOKEN for a remote database).'); process.exit(2);
   }
-  const c = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
+  const c = createClient({ url, authToken: process.env.VERITY_DATABASE_URL ? process.env.VERITY_DATABASE_TOKEN : process.env.TURSO_AUTH_TOKEN });
+  const rows = await c.execute('SELECT count(*) AS n FROM Verification').then((r) => Number(r.rows[0]?.n), () => null); // null = no schema yet
+  console.log(`database ${(() => { try { return new URL(url.replace(/^libsql:/, 'https:')).hostname; } catch { return 'file'; } })()} ${createHash('sha256').update(url).digest('hex').slice(0, 8)}: ${rows === null ? 'empty (no schema yet)' : `${rows} verification row(s) before migrating`}`);
   await c.execute('CREATE TABLE IF NOT EXISTS _verity_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)');
   const done = new Set((await c.execute('SELECT name FROM _verity_migrations')).rows.map((r) => String(r.name)));
   const dir = join(process.cwd(), 'prisma', 'migrations');

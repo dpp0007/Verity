@@ -2,7 +2,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db';
 import { ApiError } from '@/lib/errors';
-import { createVerification, retryVerification, selectCandidate } from '@/server/verifications';
+import { createVerification, deleteVerification, retryVerification, selectCandidate } from '@/server/verifications';
 import { settleJobs } from '@/server/verify';
 import { toResult } from '@/server/serialize';
 import { changeStatus, checkNow, createMonitor, getMonitorView, listAlerts, removeMonitor, runScheduledRechecks } from '@/server/monitoring';
@@ -51,6 +51,15 @@ describe('TinyFish request construction (simulated provider)', () => {
     expect(run.body.goal).toContain('never invent');
     const f = fake.calls.find((c) => c.url.startsWith('https://api.fetch.tinyfish.ai'))!;
     expect(f.body).toMatchObject({ urls: [RECORD_URL], format: 'markdown', ttl: 0 });
+  });
+  it('splits a Fetch batch larger than the provider limit of 10 URLs and merges the answers', async () => {
+    const { fetchPages } = await import('@/tinyfish/fetch');
+    const urls = Array.from({ length: 23 }, (_, i) => `https://www.gmc-uk.org/doctors/${i}`);
+    const out = await fetchPages(urls);
+    expect(out.pages.map((x) => x.url).sort()).toEqual([...urls].sort());
+    const batches = fake.calls.filter((c) => c.url.includes('/') && Array.isArray(c.body?.urls)).map((c) => c.body.urls.length);
+    expect(batches).toEqual(expect.arrayContaining([10, 10, 3]));
+    expect(Math.max(...batches)).toBeLessThanOrEqual(10);
   });
   it('surfaces invalid credentials honestly, with no fabricated result', async () => {
     process.env.TINYFISH_API_KEY = 'wrong';
@@ -533,5 +542,23 @@ describe('rate limit (counts rows, so it holds across serverless instances)', ()
     await expect(rateLimit('verify', 'someone_else')).resolves.toBeUndefined();
     await db.verification.updateMany({ where: { ownerId: OWNER }, data: { createdAt: new Date(Date.now() - 120_000) } });
     await expect(rateLimit('verify', OWNER)).resolves.toBeUndefined(); // the window has passed
+  });
+});
+
+describe('deleting a check', () => {
+  it('removes the check, its evidence, monitor, alerts and activity, and only for its owner', async () => {
+    const vid = (await verify()).id;
+    const m = await createMonitor(OWNER, vid);
+    await expect(deleteVerification(OWNER, vid)).rejects.toMatchObject({ status: 409, code: 'monitor_active' });
+    await removeMonitor(OWNER, m.id);
+    await expect(deleteVerification('someone_else', vid)).rejects.toMatchObject({ status: 404 });
+    await deleteVerification(OWNER, vid);
+    expect(await toResult(vid)).toBeNull();
+    for (const t of ['verification', 'candidate', 'evidenceSnapshot', 'monitor', 'monitorRun', 'alert', 'activityEvent'] as const) expect(await (db[t] as any).count()).toBe(0);
+  });
+  it('refuses to delete a check that is still running', async () => {
+    const vid = (await verify()).id;
+    await db.verification.update({ where: { id: vid }, data: { state: 'running' } });
+    await expect(deleteVerification(OWNER, vid)).rejects.toMatchObject({ status: 409, code: 'still_running' });
   });
 });

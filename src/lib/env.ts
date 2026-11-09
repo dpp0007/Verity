@@ -4,6 +4,8 @@ const blank = (v: unknown) => (v === '' ? undefined : v);
 const Env = z.object({
   TINYFISH_API_KEY: z.string().min(1, 'TINYFISH_API_KEY is required'),
   DATABASE_URL: z.preprocess(blank, z.string().optional()), // local SQLite file; unused when TURSO_DATABASE_URL is set
+  VERITY_DATABASE_URL: z.preprocess(blank, z.string().optional()), // stable hosted database; wins over TURSO_*
+  VERITY_DATABASE_TOKEN: z.preprocess(blank, z.string().optional()),
   TURSO_DATABASE_URL: z.preprocess(blank, z.string().optional()),
   TURSO_AUTH_TOKEN: z.preprocess(blank, z.string().optional()),
   CRON_SECRET: z.preprocess(blank, z.string().min(8, 'CRON_SECRET must be at least 8 characters').optional()),

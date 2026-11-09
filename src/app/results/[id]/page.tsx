@@ -4,7 +4,7 @@ import { use, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiFail, fmt, usePoll } from '@/lib/client';
 import type { VerificationResult } from '@/lib/schemas';
-import { Badge, JsonViewer, Loading, Meter, Notice, SourceLink, Stamp, useToast } from '@/components/ui';
+import { Badge, Confirm, JsonViewer, Loading, Meter, Notice, SourceLink, Stamp, useToast } from '@/components/ui';
 
 const STAGES: Array<[string, string, string]> = [
   ['finding_source', 'Finding source', 'Locating the official register'],
@@ -22,6 +22,7 @@ export default function ResultPage({ params }: { params: Promise<{ id: string }>
   const { data: r, error, reload, resume } = usePoll(() => api<VerificationResult>(`/api/v1/verifications/${id}`), (v) => !ACTIVE(v), 2500);
   const [busy, setBusy] = useState<string | null>(null);
   const [monErr, setMonErr] = useState<string | null>(null);
+  const [askDelete, setAskDelete] = useState(false);
 
   if (error && !r) return <Notice tone="bad" title={error.status === 404 ? 'Verification not found' : 'Could not load this verification'}>{error.message} <Link className="underline" href="/">Start a new one</Link></Notice>;
   if (!r) return <Loading label="Loading verification" />;
@@ -29,6 +30,7 @@ export default function ResultPage({ params }: { params: Promise<{ id: string }>
   const v = r.verification;
   const act = async (name: string, fn: () => Promise<void>) => { setBusy(name); try { await fn(); } catch (e) { toast((e as ApiFail).message, 'bad'); } finally { setBusy(null); } };
   const retry = () => act('retry', async () => { const n = await api<{ id: string }>(`/api/v1/verifications/${id}/retry`, { method: 'POST' }); router.push(`/results/${n.id}`); });
+  const remove = () => act('delete', async () => { await api(`/api/v1/verifications/${id}`, { method: 'DELETE' }); toast('Check deleted'); router.push('/results'); });
   const select = (cid: string) => act(cid, async () => { await api(`/api/v1/verifications/${id}/select`, { method: 'POST', json: { candidate_id: cid } }); resume(); });
   const watch = () => act('watch', async () => {
     setMonErr(null);
@@ -212,6 +214,14 @@ export default function ResultPage({ params }: { params: Promise<{ id: string }>
           </ol>
         )}
       </section>
+      {!ACTIVE(r) && (
+        <div className="flex justify-end">
+          <button className="btn btn-ghost btn-sm" onClick={() => setAskDelete(true)} disabled={busy === 'delete'}>Delete this check</button>
+        </div>
+      )}
+      <Confirm open={askDelete} title="Delete this check?" confirmLabel="Delete"
+        body={<>This permanently removes this result, its evidence and history from Verity. It cannot be undone. A record on your watchlist must be removed there first.</>}
+        onConfirm={() => { setAskDelete(false); remove(); }} onCancel={() => setAskDelete(false)} />
     </div>
   );
 }

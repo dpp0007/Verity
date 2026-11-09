@@ -83,3 +83,23 @@ export async function selectCandidate(ownerId: string, id: string, candidateId: 
   await activity(ownerId, 'candidate.selected', `Candidate selected: ${JSON.parse(c.dataJson).full_name}`, { verification_id: id, candidate_id: c.id });
   startJob(id);
 }
+
+/**
+ * Deletes one of the owner's checks and everything that hangs off it: candidates, evidence, re-checks, monitors with
+ * their runs and alerts, and the activity entries about them. Refused while the job is running or the record is still
+ * on the watchlist (remove it there first, which also deletes the TinyFish monitor).
+ */
+export async function deleteVerification(ownerId: string, id: string) {
+  const v = await db.verification.findFirst({ where: { id, ownerId, kind: 'verify' }, select: { state: true } });
+  if (!v) throw new ApiError(404, 'not_found', 'Verification not found');
+  if (v.state === 'queued' || v.state === 'running') throw new ApiError(409, 'still_running', 'This check is still running. Delete it once it has finished.');
+  if (await db.monitor.findFirst({ where: { verificationId: id, ownerId, status: { not: 'removed' } }, select: { id: true } })) {
+    throw new ApiError(409, 'monitor_active', 'Remove this record from the watchlist before deleting it.');
+  }
+  const monitors = (await db.monitor.findMany({ where: { verificationId: id, ownerId }, select: { id: true } })).map((m) => m.id);
+  const ids = [id, ...(await db.verification.findMany({ where: { parentId: id, ownerId }, select: { id: true } })).map((r) => r.id)];
+  const refs = [...ids.map((i) => `"verification_id":"${i}"`), ...monitors.map((m) => `"monitor_id":"${m}"`)];
+  await db.activityEvent.deleteMany({ where: { ownerId, OR: refs.map((r) => ({ refsJson: { contains: r } })) } });
+  await db.monitor.deleteMany({ where: { id: { in: monitors } } }); // runs and alerts cascade
+  await db.verification.deleteMany({ where: { id: { in: ids }, ownerId } }); // candidates and evidence cascade
+}

@@ -21,7 +21,10 @@ export const openapi = {
       },
       get: { summary: 'List your verifications', responses: { 200: { description: 'OK' } } },
     },
-    '/api/v1/verifications/{id}': { get: { summary: 'Retrieve a verification', parameters: [idParam], responses: { 200: ok('Verification'), 404: err } } },
+    '/api/v1/verifications/{id}': {
+      get: { summary: 'Retrieve a verification', parameters: [idParam], responses: { 200: ok('Verification'), 404: err } },
+      delete: { summary: 'Delete a verification and its evidence, re-checks, monitors and alerts', description: 'Refused (409) while the job is running or the record is still on the watchlist.', parameters: [idParam], responses: { 200: { description: 'Deleted' }, 404: err, 409: err } },
+    },
     '/api/v1/verifications/{id}/select': {
       post: { summary: 'Choose a candidate when several records match', parameters: [idParam], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['candidate_id'], properties: { candidate_id: { type: 'string' } } } } } }, responses: { 202: ok('Verification'), 409: err } },
     },
