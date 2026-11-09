@@ -6,13 +6,16 @@ Registries are configuration (`src/lib/registries.ts`): id, authority, country/r
 
 | Registry | Result |
 |---|---|
-| Companies House (GB) | **Pass.** By number, name variants, several matches then pick, liquidated companies read as `inactive`, no match, a wrong number never verifies. `verified`/high, Fetch-confirmed |
-| Medical Board of California (CA) | **Pass by licence number** (A 46271 → `verified`/high, active, expires 2028-12-31). Name-only search is refused: the DCA search form is behind a CAPTCHA, which Verity does not bypass. The public profile page `search.dca.ca.gov/profile/800/8002/<n>/A` has no CAPTCHA, so a licence number opens it directly. Fetch cannot see the script-rendered status, so it is confirmed by a second, separate Agent read (labelled as such) |
-| CSLB (CA contractors) | Runs end to end: several matches, pick, record with number and `active`. `partially_verified`/medium: issue and expiry dates were not extracted and excerpts were not confirmed |
-| GMC (GB) | Runs end to end: number, registration date and licence to practise captured. `partially_verified`/low (one excerpt unconfirmed) |
-| NMC Indian Medical Register | Runs: number and council captured, but the register shows no licence status, so status is `unknown` (never assumed active) |
-| Discovered company registers | Canada (federal) and Australia work. New Zealand returns the two same-name companies for selection. Singapore timed out. Ireland's CRO is behind a Cloudflare challenge and is reported as unavailable, not bypassed |
+| Companies House (GB) | **Pass.** By number, name variants, several matches then pick, liquidated companies read as `inactive`, no match, a wrong number never verifies. `verified`/high, Fetch-confirmed. New in the latest run: Rolls-Royce Holdings plc by number, `verified`/high, through the production server |
+| Medical Board of California (CA) | **Pass by licence number** (A 46271 → `verified`/high, active, issued 1989-07-11, expires 2028-12-31). Name-only search is refused: the DCA search form is behind a CAPTCHA, which Verity does not bypass. The public profile page `search.dca.ca.gov/profile/800/8002/<n>/A` has no CAPTCHA, so a licence number opens it directly. Fetch cannot see the script-rendered status, so it is confirmed by up to three separate Agent reads, two of which must agree (labelled as such) |
+| GMC (GB) | **Pass.** Chris Whitty (nickname) → GMC 3545939, `verified`/high, registered 1992-08-01, annual retention due 2027-08-01. The page is server-rendered, so Fetch confirms it |
+| CSLB (CA contractors) | Found Granite Construction Company (licence 89, active) on 2026-11-08 and 2026-11-09. On 2026-11-09 the CSLB site later showed "database is currently undergoing scheduled maintenance"; Verity now reports that as `temporarily_unavailable`, never as "no match" |
+| NMC Indian Medical Register | Intermittent: Randeep Guleria was found on some runs (`partially_verified`, number and council, no status because the register shows none) and not on others. A run that finds nothing is reported as no match only when the site itself said so |
+| Discovered company registers | Canada (federal) and Australia work. New Zealand returns the two same-name companies for selection |
+| Ireland (CRO), Singapore (Bizfile) | **Refused up front.** Ireland is behind a Cloudflare challenge and Singapore shows an anti-bot check ("Suspicious attempt detected"); Verity does not bypass either |
 | India company records (Sandbox) | Third-party API, **off by default** (opt-in `VERITY_ENABLE_THIRD_PARTY_VENDORS=1`): Verity is TinyFish-only unless enabled |
+
+**Found while testing, now fixed:** an agent that hit a maintenance page or bot check could report "search ran, no results", which Verity turned into "not found". Searches now ask the agent to report any site message, and a result is never called empty when the agent's own text describes a maintenance page, outage or bot check.
 
 `livePassed` is `true` only for Companies House and the Medical Board of California (by licence number).
 

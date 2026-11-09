@@ -51,5 +51,7 @@ export function normalizeDate(raw: string | null | undefined, opts: { dayFirst?:
   if (m) { const i = MONTHS.indexOf(m[2].slice(0, 3).toLowerCase()); return i < 0 ? null : valid(+m[3], i + 1, +m[1]); }
   m = s.match(/^([A-Za-z]{3,})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/);
   if (m) { const i = MONTHS.indexOf(m[1].slice(0, 3).toLowerCase()); return i < 0 ? null : valid(+m[3], i + 1, +m[2]); }
-  return null;
+  // Registers often show a label with the date ("Annual retention fee due date: 01 Aug 2027"): read the one date in it.
+  const found = [...s.matchAll(/\d{4}-\d{2}-\d{2}|\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]{3,}\.?,?\s+\d{4}|[A-Za-z]{3,}\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}|\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}/g)].map((x) => x[0]);
+  return found.length === 1 && found[0] !== s ? normalizeDate(found[0], opts) : null; // two dates in one string is ambiguous: no guess
 }

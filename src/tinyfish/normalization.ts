@@ -22,6 +22,7 @@ export const SEARCH_OUTPUT_SCHEMA = {
         required: ['full_name'],
       },
     },
+    site_message: S,
     notes: S,
   },
   required: ['search_performed', 'no_results', 'candidates'],
@@ -48,6 +49,8 @@ export const SearchOutput = z.object({
     full_name: z.string().min(1),
     license_number: nstr, profession: nstr, status_text: nstr, location: nstr, organization: nstr, record_url: nstr,
   })).max(25),
+  /** Any maintenance, error, outage, blocked or human-verification message the site showed instead of results. */
+  site_message: nstr,
   notes: nstr,
 });
 export type SearchOutput = z.infer<typeof SearchOutput>;
@@ -71,3 +74,11 @@ export function excerptInPage(excerpt: string, pageText: string): boolean {
   const e = flat(excerpt.replace(/[*_`#>|]/g, ''));
   return e.length >= 3 && flat(pageText.replace(/[*_`#>|]/g, '')).includes(e);
 }
+
+/**
+ * An empty result is only a real "no match" if the site actually searched. Agents sometimes report a search that hit a
+ * maintenance page, outage, rate limit or bot check as "no results"; that must never be read as "not found".
+ */
+const SITE_PROBLEM = /\b(maintenance|temporarily unavailable|try again later|service unavailable|outage|down for|unable to (?:search|connect|load)|captcha|verify you are (?:a )?human|suspicious|blocked|access denied|rate limit|too many requests|error occurred|could not be (?:completed|submitted))\b/i;
+export const siteProblem = (o: { site_message?: string | null; notes?: string | null }): string | null =>
+  [o.site_message, o.notes].find((t): t is string => !!t && SITE_PROBLEM.test(t)) ?? null; // an ordinary "no records found" is not a problem

@@ -11,8 +11,8 @@ export class FakeTinyFish {
   searchHits: Array<{ url: string; title: string }> = [{ url: 'https://search.dca.ca.gov/', title: 'DCA License Search' }];
   searchResult: any = { search_performed: true, no_results: false, candidates: [] };
   detailResult: any = {};
-  /** When set, the 2nd and later record reads (the second-read confirmation) return this instead. */
-  detailSecond: any | null = null;
+  /** When set, the 2nd and later record reads return this instead (an array gives read 2, read 3, then repeats the last). */
+  detailSecond: any | any[] | null = null;
   private detailReads = 0;
   agentFailure: { code: string; category: string; message: string } | null = null;
   agentMalformed = false;
@@ -33,6 +33,11 @@ export class FakeTinyFish {
 
   install() {
     vi.stubGlobal('fetch', vi.fn(async (input: URL | string, init: RequestInit = {}) => this.handle(new URL(String(input)), init)));
+  }
+  private nextDetail() {
+    const n = ++this.detailReads;
+    if (n === 1 || !this.detailSecond) return this.detailResult;
+    return Array.isArray(this.detailSecond) ? this.detailSecond[Math.min(n - 2, this.detailSecond.length - 1)] : this.detailSecond;
   }
   reset() {
     this.calls = []; this.detailSecond = null; this.detailReads = 0; this.agentFailure = null; this.agentMalformed = false; this.fetchError = null; this.monitorCreate = 'ok';
@@ -97,7 +102,7 @@ export class FakeTinyFish {
       const isDetail = String(body.goal).includes('Open the single record');
       if (this.agentFailure) this.runs.set(id, { run_id: id, status: 'FAILED', result: null, error: this.agentFailure });
       else if (this.agentMalformed) this.runs.set(id, { run_id: id, status: 'COMPLETED', result: { nonsense: true } });
-      else this.runs.set(id, { run_id: id, status: 'COMPLETED', result: isDetail ? (++this.detailReads > 1 && this.detailSecond ? this.detailSecond : this.detailResult) : this.searchResult, error: null });
+      else this.runs.set(id, { run_id: id, status: 'COMPLETED', result: isDetail ? this.nextDetail() : this.searchResult, error: null });
       return this.json({ run_id: id, error: null });
     }
     const runGet = p.match(/^\/v1\/runs\/([^/]+)$/);

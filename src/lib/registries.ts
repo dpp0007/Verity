@@ -131,7 +131,10 @@ export function findRegistry(country: string, region: string | null, recordType:
 }
 
 /** Combinations where a live test showed the official public lookup cannot be automated. Refused up front instead of timing out. */
-export const KNOWN_BLOCKED: Record<string, string> = {};
+export const KNOWN_BLOCKED: Record<string, string> = {
+  'IE:company_registration': "Ireland's Companies Registration Office (core.cro.ie) sits behind a Cloudflare bot-verification challenge, which Verity does not bypass, so Irish companies cannot be searched automatically. Check it directly at https://core.cro.ie/.",
+  'SG:company_registration': "Singapore's ACRA Bizfile blocks automated searches with an anti-bot check (\"Suspicious attempt detected\"), which Verity does not bypass, so Singapore companies cannot be searched automatically. Check it directly at https://www.bizfile.gov.sg/.",
+};
 
 export function supportMessage(country: string, region: string | null, recordType: RecordType): string {
   const sameType = REGISTRIES.filter((r) => r.recordTypes.includes(recordType));

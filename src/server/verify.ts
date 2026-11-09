@@ -1,3 +1,4 @@
+import { after } from 'next/server';
 import { createHash } from 'node:crypto';
 import { db } from '@/lib/db';
 import { log } from '@/lib/log';
@@ -14,7 +15,7 @@ import { chLookup, chSearch, normalizeChNumber, type ChCompany } from '@/registr
 import { fetchPages } from '@/tinyfish/fetch';
 import { runAgent } from '@/tinyfish/agent';
 import { TinyFishError } from '@/tinyfish/errors';
-import { DETAIL_OUTPUT_SCHEMA, DetailOutput, SEARCH_OUTPUT_SCHEMA, SearchOutput, excerptInPage } from '@/tinyfish/normalization';
+import { DETAIL_OUTPUT_SCHEMA, DetailOutput, SEARCH_OUTPUT_SCHEMA, SearchOutput, excerptInPage, siteProblem } from '@/tinyfish/normalization';
 import { activity, newId } from './activity';
 import { registryOf } from './registry';
 
@@ -28,10 +29,15 @@ export interface StoredResult {
 export interface StoredCandidate { full_name: string; license_number: string | null; profession: string | null; status_text: string | null; location: string | null; organization: string | null; record_url: string | null }
 
 const jobs = new Set<Promise<void>>();
-/** In-process background execution. `npm run worker` re-drives queued jobs after a restart (see README). */
+/**
+ * Runs a verification after the HTTP response is sent. On Vercel `after()` keeps the function alive (up to the route's
+ * maxDuration) so the job is not killed when the response returns; outside a request (tests, scripts) it just runs.
+ * A job that still dies is surfaced as "interrupted" and re-driven by the maintenance cron (see src/server/maintenance.ts).
+ */
 export function startJob(id: string) {
   const p = runVerification(id).catch((e) => log('error', 'job.crashed', { id, err: String(e) })).finally(() => jobs.delete(p));
   jobs.add(p);
+  try { after(p); } catch { /* not inside a request */ }
 }
 
 const setStage = (id: string, stage: Stage) => db.verification.update({ where: { id }, data: { stage } });
@@ -50,7 +56,7 @@ function goalSearch(reg: Registry, v: { name: string; licenseNumber: string | nu
     'If a search button cannot be found after two attempts, press Enter in the name field instead; do not keep re-selecting the same dropdowns.',
     'Enter the name (or the number if one was given), submit the search, and review ALL matching results, using pagination if needed (up to 10 candidates).',
     'For each plausible match return what the results list shows: full name, licence/registration number, profession, status text exactly as displayed, location, organisation, and the URL of the record page if available.',
-    'Rules: never invent or infer values; use null when a value is not displayed. Do not decide which candidate is correct. Do not merge candidates. If the register is unreachable or the search could not be submitted, set search_performed=false. If the search ran and returned nothing, set search_performed=true, no_results=true and candidates=[].',
+    'Rules: never invent or infer values; use null when a value is not displayed. Do not decide which candidate is correct. Do not merge candidates. If the register is unreachable or the search could not be submitted, set search_performed=false. If the site shows ANY maintenance, error, outage, rate-limit, bot-check or human-verification message instead of results, copy that message into site_message and set search_performed=false: that is not an empty result. Only if the search genuinely ran and the site itself said nothing matched, set search_performed=true, no_results=true and candidates=[].',
   ].join('\n');
 }
 
@@ -89,7 +95,7 @@ async function finish(id: string, outcome: Outcome, result: StoredResult, state:
   if (v.kind === 'recheck' && v.monitorId) await (await import('./monitoring')).onRecheckFinished(id);
 }
 
-export async function runVerification(id: string): Promise<void> {
+async function runVerification(id: string): Promise<void> {
   const claimed = await db.verification.updateMany({ where: { id, state: 'queued' }, data: { state: 'running' } });
   if (claimed.count === 0) return;
   try {
@@ -151,7 +157,8 @@ export async function runVerification(id: string): Promise<void> {
     if (!parsed.success) throw new TinyFishError('malformed', 'Registry search output failed validation', { providerRunId: runId });
     const out = parsed.data;
     await activity(v.ownerId, 'search.completed', `Registry search completed (${out.candidates.length} candidate(s))`, { verification_id: id, run_id: runId });
-    if (!out.search_performed) throw new TinyFishError('unavailable', out.notes ?? 'The registry search could not be completed. This is not a "no match" result.', { providerRunId: runId });
+    const problem = !out.candidates.length ? siteProblem(out) : null;
+    if (!out.search_performed || problem) throw new TinyFishError('unavailable', `${problem ?? out.notes ?? 'The registry search could not be completed.'} This is not a "no match" result.`, { providerRunId: runId });
 
     cands = out.candidates.map((c) => ({ ...c, record_url: c.record_url && isOfficialUrl(c.record_url, reg.domains) ? c.record_url : null }));
     }
@@ -250,7 +257,7 @@ export async function completeWithCandidate(
   const { runId, result } = await runAgent({ url: entry, goal: goalDetail(reg, cand), outputSchema: DETAIL_OUTPUT_SCHEMA, onStart: (r) => addRun(id, r) });
   const parsed = DetailOutput.safeParse(result);
   if (!parsed.success) throw new TinyFishError('malformed', 'Record output failed validation', { providerRunId: runId });
-  const d = parsed.data;
+  let d = parsed.data;
   if (!d.record_opened) throw new TinyFishError('unavailable', d.notes ?? 'The record page could not be opened. This is not evidence about the licence status.', { providerRunId: runId });
 
   const recordUrl = [d.record_url, cand.record_url].find((u) => u && isOfficialUrl(u, reg.domains)) ?? null;
@@ -275,27 +282,37 @@ export async function completeWithCandidate(
     }
   } else limitations.push('Excerpts could not be re-confirmed without a direct record URL.');
 
-  const evidence: Evidence[] = d.excerpts.map((x) => ({
-    url: sourceUrl, excerpt: x.text.slice(0, 600), fields: [x.field], fetched_at: fetchedAt,
-    validated: pageText ? excerptInPage(x.text, pageText) : false,
-  }));
-  // Some official pages render status with script, so Fetch cannot see it. Confirm with a second, separate browser read
-  // and require agreement on status, number and expiry. This is labelled as such; it is not claimed to be a Fetch check.
-  const statusUnvalidated = !evidence.some((e) => e.fields.some((f) => /status/i.test(f)) && e.validated);
-  if (recordUrl && statusUnvalidated && d.status_text) {
+  // Some official pages render status with script, so Fetch cannot see it and an agent read is the only evidence.
+  // Agent reads vary (a misspelt name, a missed date), so take further separate reads and require two of three to agree
+  // on status, number and expiry. A consensus can overrule an outlier first read. This is labelled as such; it is
+  // never presented as a Fetch confirmation.
+  let confirmedByReads = false;
+  const fetchSawStatus = !!pageText && d.excerpts.some((x) => /status/i.test(x.field) && excerptInPage(x.text, pageText!));
+  if (recordUrl && !fetchSawStatus && d.status_text) {
+    const norm = (a: string | null | undefined) => (a ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const agree = (x: typeof d, y: typeof d) => norm(x.status_text) === norm(y.status_text) && norm(x.license_number) === norm(y.license_number) && norm(x.expiry_date_text) === norm(y.expiry_date_text);
+    const reads: Array<typeof d> = [d];
     try {
-      const second = await runAgent({ url: recordUrl, goal: goalDetail(reg, cand), outputSchema: DETAIL_OUTPUT_SCHEMA, onStart: (r) => addRun(id, r) });
-      const p2 = DetailOutput.safeParse(second.result);
-      const same = (a: string | null | undefined, b: string | null | undefined) => (a ?? '').replace(/\s+/g, ' ').trim().toLowerCase() === (b ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
-      if (p2.success && p2.data.record_opened && same(p2.data.status_text, d.status_text) && same(p2.data.license_number, d.license_number) && same(p2.data.expiry_date_text, d.expiry_date_text)) {
-        for (const e of evidence) e.validated = true;
-        limitations.push('Confirmed by a second, separate browser read of the official page (Fetch could not see this page\'s status).');
-      } else limitations.push('A second browser read of the official page did not agree with the first, so the excerpts were not confirmed.');
+      for (let n = 0; n < 2 && !(reads.length >= 2 && reads.some((x, i) => reads.some((y, j) => i < j && agree(x, y)))); n++) {
+        const next = await runAgent({ url: recordUrl, goal: goalDetail(reg, cand), outputSchema: DETAIL_OUTPUT_SCHEMA, onStart: (r) => addRun(id, r) });
+        const p = DetailOutput.safeParse(next.result);
+        if (p.success && p.data.record_opened) reads.push(p.data);
+      }
     } catch (e) {
       if (e instanceof TinyFishError && (e.kind === 'auth' || e.kind === 'billing')) throw e;
-      limitations.push('A second browser read was unavailable; excerpts were not confirmed.');
     }
+    const pair = reads.flatMap((x, i) => reads.slice(i + 1).map((y) => [x, y] as const)).find(([x, y]) => agree(x, y));
+    if (pair) {
+      confirmedByReads = true;
+      if (pair[0] !== d) { d = pair[0]; limitations.push('The first browser read disagreed with two later reads and was discarded in favour of the consensus.'); }
+      limitations.push(`Confirmed by ${reads.length} separate browser reads of the official page, ${pair.length} of which agree (Fetch could not see this page's status).`);
+    } else limitations.push(reads.length < 2 ? 'A second browser read was unavailable; excerpts were not confirmed.' : 'Separate browser reads of the official page did not agree, so the excerpts were not confirmed.');
   }
+
+  const evidence: Evidence[] = d.excerpts.map((x) => ({
+    url: sourceUrl, excerpt: x.text.slice(0, 600), fields: [x.field], fetched_at: fetchedAt,
+    validated: confirmedByReads || (pageText ? excerptInPage(x.text, pageText) : false),
+  }));
   if (pageText) {
     await db.evidenceSnapshot.create({ data: { id: newId('ev'), verificationId: id, url: recordUrl!, fetchedAt: new Date(fetchedAt), contentHash: createHash('sha256').update(pageText).digest('hex'), excerptsJson: JSON.stringify(evidence), text: pageText.slice(0, 60_000) } });
   }

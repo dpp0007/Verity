@@ -194,3 +194,19 @@ describe('California Medical Board: direct profile by licence number (no CAPTCHA
   it.each(['', 'Shin', 'G 12345', '1234567', 'A 12-3'])('%j is not a supported licence number', (input) => expect(reg.profileUrl!(input)).toBeNull());
   it('the profile URL is on an approved official domain', () => expect(isOfficialUrl(reg.profileUrl!('46271')!, reg.domains)).toBe(true));
 });
+
+describe('names with short forms and dates with labels (found in live GMC runs)', () => {
+  it('matches "Chris" to "Christopher" only as partial, never exact', () => {
+    expect(nameMatch('Chris Whitty', 'Christopher John Macrae WHITTY')).toBe('partial');
+    expect(nameMatch('Whitty, Christopher', 'Christopher John Macrae WHITTY')).toBe('partial');
+    expect(nameMatch('Chris Whitty', 'Christopher Whitley')).toBe('none');
+    expect(nameMatch('Smith', 'Smithson')).toBe('none'); // surnames get no tolerance
+    expect(nameMatch('Bob Hale', 'Robert Hale')).toBe('partial');
+    expect(nameMatch('Chris Hale', 'Christopher Hale', true)).toBe('none'); // businesses get no short-form tolerance
+  });
+  it.each([
+    ['Annual retention fee due date: 01 Aug 2027', '2027-08-01'], ['Full registration date: 01 Aug 1992', '1992-08-01'], ['Expires: 2028-12-31', '2028-12-31'],
+    ['Issued 31/03/2027', '2027-03-31'],
+  ])('reads the one date in "%s"', (raw, iso) => expect(normalizeDate(raw, { dayFirst: true })).toBe(iso));
+  it('refuses a string with two dates and never guesses', () => expect(normalizeDate('Issued 01 Aug 1992, expires 01 Aug 2027')).toBeNull());
+});

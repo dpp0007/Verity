@@ -35,8 +35,6 @@ const CASES: Case[] = [
   { label: 'in: several matches (vendor)', input: co('Tata Consultancy Services', 'IN'), pick: /^TATA CONSULTANCY SERVICES LIMITED$/i, expect: both(outcome('partially_verified'), state('active')) },
   { label: 'in: no match (vendor)', input: co('Zzqxv Plorbnik Holdings Limited', 'IN'), expect: outcome('not_found') },
   { label: 'nz: discovered register', input: co('Fonterra Co-operative Group Limited', 'NZ'), pick: /^FONTERRA CO-OPERATIVE GROUP LIMITED/i, expect: (r) => (r.record ? null : `no record (${r.verification.outcome})`) },
-  { label: 'sg: discovered register', input: co('DBS Group Holdings Ltd', 'SG'), pick: /DBS GROUP HOLDINGS/i, expect: (r) => (r.record || r.verification.outcome === 'ambiguous' ? null : `no record (${r.verification.outcome}: ${r.error?.message ?? r.verification.limitations[0]})`) },
-  { label: 'ie: discovered register', input: co('Ryanair Holdings plc', 'IE'), pick: /RYANAIR HOLDINGS/i, expect: (r) => (r.record ? null : `no record (${r.verification.outcome}: ${r.error?.message ?? r.verification.limitations[0]})`) },
   { label: 'ca: discovered register', input: co('Shopify Inc.', 'CA'), pick: /SHOPIFY INC/i, expect: (r) => (r.record ? null : `no record (${r.verification.outcome}: ${r.error?.message ?? r.verification.limitations[0]})`) },
   { label: 'au: discovered register', input: co('Qantas Airways Limited', 'AU'), pick: /QANTAS AIRWAYS LIMITED/i, expect: (r) => (r.record ? null : `no record (${r.verification.outcome}: ${r.error?.message ?? r.verification.limitations[0]})`) },
 ];
