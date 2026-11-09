@@ -2,7 +2,8 @@
  * Applies each prisma/migrations folder's migration.sql to the hosted libSQL (Turso) database, in order, once each.
  * `prisma migrate deploy` cannot run through a driver adapter, so production uses this instead:
  *   TURSO_DATABASE_URL=libsql://... TURSO_AUTH_TOKEN=... npm run db:migrate:turso
- * Also accepts a local file URL (file:./x.db), which is how it is tested.
+ * Also accepts a local file URL (file:./x.db), which is how it is tested. The Vercel build runs it with --if-configured,
+ * so every deploy brings the hosted schema up to date (it is idempotent).
  */
 import './loadEnv';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -11,7 +12,10 @@ import { createClient } from '@libsql/client';
 
 (async () => {
   const url = process.env.TURSO_DATABASE_URL;
-  if (!url) { console.error('Set TURSO_DATABASE_URL (and TURSO_AUTH_TOKEN for a remote database).'); process.exit(2); }
+  if (!url) {
+    if (process.argv.includes('--if-configured')) { console.log('TURSO_DATABASE_URL not set: skipping hosted migrations'); return; } // local builds
+    console.error('Set TURSO_DATABASE_URL (and TURSO_AUTH_TOKEN for a remote database).'); process.exit(2);
+  }
   const c = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
   await c.execute('CREATE TABLE IF NOT EXISTS _verity_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)');
   const done = new Set((await c.execute('SELECT name FROM _verity_migrations')).rows.map((r) => String(r.name)));

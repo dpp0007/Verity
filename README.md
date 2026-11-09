@@ -93,11 +93,8 @@ Vercel functions are serverless: there is no persistent disk and no always-on wo
 | Scheduled work | [vercel.json](vercel.json) runs `/api/cron/maintenance` daily at 05:00 UTC: it fails dead jobs, re-drives queued ones and starts scheduled re-checks (3 records per run). Hobby allows daily crons only; on Pro change the schedule (for example `*/10 * * * *`) |
 | Rate limits | Counted from database rows, so they hold across instances |
 
-1. Create a libSQL database and apply the schema once, from your machine:
-   ```bash
-   TURSO_DATABASE_URL=libsql://<db>.turso.io TURSO_AUTH_TOKEN=<token> npm run db:migrate:turso
-   ```
-2. Import the repository in Vercel and set these environment variables:
+1. Create a libSQL database (Vercel Marketplace → Turso, added to the project, sets `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`). The build applies the schema itself (`scripts/migrate-turso.ts --if-configured`, idempotent), so there is no manual migration. To apply it by hand: `TURSO_DATABASE_URL=libsql://<db>.turso.io TURSO_AUTH_TOKEN=<token> npm run db:migrate:turso`.
+2. With the Vercel CLI: `vercel link`, set these environment variables (`vercel env add NAME production --sensitive`), then `vercel deploy --prod`:
 
    | Variable | Value |
    |---|---|
@@ -111,7 +108,7 @@ Vercel functions are serverless: there is no persistent disk and no always-on wo
 3. Deploy (the build runs `prisma generate && next build`). Check `GET /api/health` returns `ok`.
 4. Create a monitor in the app. Because `APP_URL` is public https, the TinyFish monitor registers its webhook and changes arrive without anyone pressing "Check now".
 
-Not deployed yet: this path was verified locally (the libSQL adapter ran a real verification against a local libSQL file) but not on Vercel itself.
+Deployed at https://verity-theta-topaz.vercel.app (2026-11-09). On the live site: a real Companies House check returned `verified`/high through Turso, and a monitor was created with its webhook accepted by TinyFish. Deployment Protection does not cover the production domain, so the site is public and **anyone can spend your TinyFish credits**: watch the balance, or add Vercel password protection (which also blocks the monitor webhook).
 
 ## Troubleshooting
 
