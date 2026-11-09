@@ -14,7 +14,8 @@ import { createPageMonitor, deleteMonitor, getMonitor, runMonitorNow, setMonitor
 import { activity, newId } from './activity';
 import { startJob, type StoredResult } from './verify';
 
-const CRON = '0 6 * * *'; // daily, UTC
+/** How often TinyFish re-reads a monitored page. Daily by default; VERITY_MONITOR_CRON (5-field cron, UTC) overrides it for new monitors. */
+const CRON = /^\S+( \S+){4}$/.test(process.env.VERITY_MONITOR_CRON ?? '') ? process.env.VERITY_MONITOR_CRON! : '0 6 * * *';
 const RECHECK_COOLDOWN_MS = 10 * 60_000;
 
 export interface RunInput {

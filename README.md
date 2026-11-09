@@ -93,13 +93,14 @@ Vercel functions are serverless: there is no persistent disk and no always-on wo
 | Scheduled work | [vercel.json](vercel.json) runs `/api/cron/maintenance` daily at 05:00 UTC: it fails dead jobs, re-drives queued ones and starts scheduled re-checks (3 records per run). Hobby allows daily crons only; on Pro change the schedule (for example `*/10 * * * *`) |
 | Rate limits | Counted from database rows, so they hold across instances |
 
-1. Create a libSQL database (Vercel Marketplace → Turso, added to the project, sets `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`). The build applies the schema itself (`scripts/migrate-turso.ts --if-configured`, idempotent), so there is no manual migration. To apply it by hand: `TURSO_DATABASE_URL=libsql://<db>.turso.io TURSO_AUTH_TOKEN=<token> npm run db:migrate:turso`.
+1. Create a libSQL (Turso) database you control and note its URL and an auth token. **Use your own database, not the Vercel Marketplace integration's variables**: that integration can create a brand-new database for every deployment (the build log host becomes `dpl-<id>-…turso.io`), which silently loses all data on each deploy. Set `VERITY_DATABASE_URL` and `VERITY_DATABASE_TOKEN`; they win over the `TURSO_*` variables. The build applies the schema itself (`scripts/migrate-turso.ts --if-configured`, idempotent) and logs the database host: it should be the same on every deploy and say "database is up to date". To apply it by hand: `VERITY_DATABASE_URL=libsql://<db>.turso.io VERITY_DATABASE_TOKEN=<token> npm run db:migrate:turso`.
 2. With the Vercel CLI: `vercel link`, set these environment variables (`vercel env add NAME production --sensitive`), then `vercel deploy --prod`:
 
    | Variable | Value |
    |---|---|
    | `TINYFISH_API_KEY` | your TinyFish key |
-   | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | from step 1 |
+   | `VERITY_DATABASE_URL`, `VERITY_DATABASE_TOKEN` | from step 1 |
+   | `VERITY_MONITOR_CRON` | optional: how often TinyFish re-reads monitored pages, 5-field cron in UTC (default `0 6 * * *`, daily) |
    | `APP_URL` | the public https origin, for example `https://verity.vercel.app` (TinyFish calls the monitor webhook there) |
    | `WEBHOOK_SECRET` | 8+ characters |
    | `CRON_SECRET` | 8+ characters; Vercel sends it to the cron route automatically |
@@ -108,7 +109,7 @@ Vercel functions are serverless: there is no persistent disk and no always-on wo
 3. Deploy (the build runs `prisma generate && next build`). Check `GET /api/health` returns `ok`.
 4. Create a monitor in the app. Because `APP_URL` is public https, the TinyFish monitor registers its webhook and changes arrive without anyone pressing "Check now".
 
-Deployed at https://verity-theta-topaz.vercel.app (2026-11-09). On the live site: a real Companies House check returned `verified`/high through Turso, and a monitor was created with its webhook accepted by TinyFish. Deployment Protection does not cover the production domain, so the site is public and **anyone can spend your TinyFish credits**: watch the balance, or add Vercel password protection (which also blocks the monitor webhook).
+Deployed at https://verity-theta-topaz.vercel.app (2026-11-09). On the live site: real Companies House and California checks completed, data survived redeploys on the stable database, and **TinyFish's first real scheduled webhook arrived, parsed and was recorded** (06:30 UTC, outcome `unchanged`, no false alert). A real status *change* arriving by webhook has not been seen yet: it needs a monitored record to actually change. Deployment Protection does not cover the production domain, so the site is public and **anyone can spend your TinyFish credits**: watch the balance, or add Vercel password protection (which also blocks the monitor webhook).
 
 ## Troubleshooting
 

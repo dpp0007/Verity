@@ -25,3 +25,9 @@ official status moves (for example Active → Liquidation → Dissolved).
 A page monitor sees page text. California licence profiles load their status by script, so the text never changes when the status
 does. The maintenance cron (`/api/cron/maintenance`) re-verifies every active monitor each `VERITY_RECHECK_HOURS` (default 24) through the same path, so alerts still come only
 from field-level differences in a verified result.
+
+## Webhook delivery, observed
+
+2026-11-09: a monitor on YS Medical Limited (09171834), a real company then showing "Active — Active proposal to strike off", was created on the live site with a 10-minute schedule (`VERITY_MONITOR_CRON`). TinyFish's first scheduled run POSTed to `/api/v1/webhooks/tinyfish` at 06:30:05 UTC; Verity accepted it (token checked, payload parsed, deduplicated) and recorded a `webhook` run with outcome `unchanged` and no alert. The monitor and check were then deleted.
+
+To watch for a real status change, add companies that are in the strike-off notice period to your own watchlist (the Gazette lists them; the Companies House page says "Active proposal to strike off"). When one is dissolved, the next scheduled run changes the page, the record is re-verified, and the status change is recorded as an alert with its evidence.
