@@ -7,8 +7,8 @@
 import { fetchPages } from '@/tinyfish/fetch';
 import { TinyFishError } from '@/tinyfish/errors';
 
-export const CH_BASE = 'https://find-and-update.company-information.service.gov.uk';
-export const chCompanyUrl = (n: string) => `${CH_BASE}/company/${encodeURIComponent(n)}`;
+const CH_BASE = 'https://find-and-update.company-information.service.gov.uk';
+const chCompanyUrl = (n: string) => `${CH_BASE}/company/${encodeURIComponent(n)}`;
 
 export interface ChCompany { number: string; name: string; status: string | null; incorporated: string | null; dissolved: string | null; office: string | null; type: string | null; url: string; text: string }
 

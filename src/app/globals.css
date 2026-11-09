@@ -65,8 +65,6 @@ h1, h2, h3 { letter-spacing: -0.025em; }
 /* ---- surfaces ---- */
 .card { border: 1px solid var(--line); background: var(--panel); border-radius: 16px; }
 .card-strong { border: 1px solid var(--line-strong); background: var(--panel); border-radius: 16px; box-shadow: 0 1px 0 rgba(255, 255, 255, .04) inset; }
-.panel { border: 1px solid var(--line); background: var(--panel); border-radius: 16px; }
-.sunk { background: var(--sunk); }
 .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--mute); }
 .hint { color: var(--mute); font-size: 12.5px; }
 .mono { font-family: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, monospace; font-size: 12.5px; }

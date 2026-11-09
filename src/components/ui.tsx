@@ -6,7 +6,7 @@ const TONE: Record<string, 'ok' | 'warn' | 'bad' | 'mute'> = {
   expired: 'bad', suspended: 'bad', revoked: 'bad', failed: 'bad', low: 'bad',
   inactive: 'mute', unknown: 'mute', not_found: 'mute', unsupported: 'mute',
 };
-export const toneOf = (v: string | null | undefined) => TONE[v ?? 'unknown'] ?? 'mute';
+const toneOf = (v: string | null | undefined) => TONE[v ?? 'unknown'] ?? 'mute';
 
 export function Badge({ value, label }: { value: string | null | undefined; label?: string }) {
   const v = value ?? 'unknown';
@@ -35,16 +35,6 @@ export function Meter({ level }: { level: 'high' | 'medium' | 'low' | null }) {
 export function SourceLink({ url, children }: { url: string | null; children?: ReactNode }) {
   if (!url) return <span className="text-mute">—</span>;
   return <a href={url} target="_blank" rel="noopener noreferrer" className="mono break-all underline decoration-line underline-offset-4 hover:bg-lime hover:text-lime-ink hover:decoration-transparent">{children ?? url} ↗</a>;
-}
-
-export function Field({ label, hint, children, htmlFor }: { label: string; hint?: string; children: ReactNode; htmlFor?: string }) {
-  return (
-    <div>
-      <label className="label" htmlFor={htmlFor}>{label}</label>
-      {children}
-      {hint && <p className="hint mt-1.5">{hint}</p>}
-    </div>
-  );
 }
 
 export function Notice({ tone = 'warn', title, children }: { tone?: 'warn' | 'bad' | 'ok' | 'info'; title?: string; children?: ReactNode }) {

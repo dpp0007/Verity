@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const STATUSES = ['active', 'expired', 'suspended', 'revoked', 'inactive', 'pending', 'not_found', 'unknown'] as const;
 export const OUTCOMES = ['verified', 'partially_verified', 'ambiguous', 'not_found', 'unsupported', 'temporarily_unavailable', 'failed'] as const;
-export const CONFIDENCE = ['high', 'medium', 'low'] as const;
+const CONFIDENCE = ['high', 'medium', 'low'] as const;
 export const STAGES = ['finding_source', 'searching_registry', 'comparing_records', 'verifying_evidence'] as const;
 export const RECORD_TYPES = ['medical_license', 'contractor_license', 'company_registration'] as const;
 
@@ -35,7 +35,7 @@ export const RecordSchema = z.object({
 });
 export type NormalizedRecord = z.infer<typeof RecordSchema>;
 
-export const CandidateViewSchema = z.object({
+const CandidateViewSchema = z.object({
   id: z.string(),
   full_name: z.string(),
   license_number: z.string().nullable(),
@@ -45,7 +45,6 @@ export const CandidateViewSchema = z.object({
   organization: z.string().nullable(),
   record_url: z.string().nullable(),
 });
-export type CandidateView = z.infer<typeof CandidateViewSchema>;
 
 export const VerificationResultSchema = z.object({
   id: z.string(),

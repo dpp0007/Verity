@@ -6,7 +6,6 @@ import { z } from 'zod';
 import { TinyFishError, kindFromStatus } from '@/tinyfish/errors';
 
 const base = () => process.env.SANDBOX_API_URL || 'https://api.sandbox.co.in';
-export const sandboxConfigured = () => !!(process.env.SANDBOX_API_KEY && process.env.SANDBOX_API_SECRET);
 
 let token: { value: string; exp: number } | null = null;
 
