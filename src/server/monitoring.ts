@@ -40,7 +40,7 @@ function webhookUrl(): string | undefined {
   return `${u.origin}/api/v1/webhooks/tinyfish?token=${encodeURIComponent(e.WEBHOOK_SECRET)}`;
 }
 
-export function purposeFor(fields: string[], name: string): string {
+function purposeFor(fields: string[], name: string): string {
   return `Track changes to the official ${fields.join(', ')} for this specific registered subject (${name}). Report changes to these fields and distinguish them from page-layout, navigation or cookie-banner changes.`;
 }
 
@@ -112,7 +112,7 @@ async function owned(ownerId: string, id: string) {
   return m;
 }
 
-export async function monitorView(id: string) {
+async function monitorView(id: string) {
   const m = await db.monitor.findUniqueOrThrow({ where: { id }, include: { alerts: { orderBy: { detectedAt: 'desc' }, take: 1 }, runs: { orderBy: { createdAt: 'desc' }, take: 10 } } });
   const a = m.alerts[0];
   return {
@@ -222,24 +222,51 @@ export async function processRun(monitorId: string, r: RunInput, source: 'webhoo
     return { alert: false, outcome: 'irrelevant_change' };
   }
 
-  const recent = await db.verification.findFirst({ where: { monitorId, kind: 'recheck', createdAt: { gt: new Date(Date.now() - RECHECK_COOLDOWN_MS) } } });
-  if (recent) {
-    await mk('unchanged', true);
-    return { alert: false, outcome: 'recheck_throttled' };
-  }
-  await mk('recheck_pending', true);
+  const started = await startRecheck(m, cfg, r.id, source, `Page change detected for ${m.subjectName}; re-verifying the record`, r.diff ?? null);
+  if (!started) await mk('unchanged', true);
+  return { alert: false, outcome: started ? 'recheck_started' : 'recheck_throttled' };
+}
+
+type MonitorRow = Awaited<ReturnType<typeof db.monitor.findUniqueOrThrow>>;
+
+/**
+ * Starts a fresh verification of the monitored record. Shared by page-change webhooks, manual checks and the
+ * scheduled re-check, so all three produce alerts the same way: only field-level differences count.
+ * Returns false when a re-check ran within the cooldown (a burst of changes must not burn credits).
+ */
+async function startRecheck(m: MonitorRow, cfg: { candidate: unknown }, providerRunId: string | null, source: string, message: string, diff: string | null = null): Promise<boolean> {
+  const recent = await db.verification.findFirst({ where: { monitorId: m.id, kind: 'recheck', createdAt: { gt: new Date(Date.now() - RECHECK_COOLDOWN_MS) } } });
+  if (recent) return false;
+  await db.monitorRun.create({ data: { id: newId('mrun'), monitorId: m.id, providerRunId, source, outcome: 'recheck_pending', ok: true, diff: diff?.slice(0, 20_000) ?? null } });
   const vid = newId('ver');
   const base = await db.verification.findUniqueOrThrow({ where: { id: m.verificationId } });
   await db.verification.create({
     data: {
-      id: vid, ownerId: m.ownerId, kind: 'recheck', monitorId, parentId: base.id, subjectType: base.subjectType, name: base.name, recordType: base.recordType,
+      id: vid, ownerId: m.ownerId, kind: 'recheck', monitorId: m.id, parentId: base.id, subjectType: base.subjectType, name: base.name, recordType: base.recordType,
       country: base.country, region: base.region, licenseNumber: base.licenseNumber, sourceUrlInput: null, inputHash: base.inputHash, registryId: base.registryId, registryJson: base.registryJson, state: 'queued',
       candidates: { create: { id: newId('cand'), dataJson: JSON.stringify(cfg.candidate), selected: true } },
     },
   });
-  await activity(m.ownerId, 'monitor.check_completed', `Page change detected for ${m.subjectName}; re-verifying the record`, { monitor_id: monitorId, run_id: r.id, verification_id: vid });
+  await activity(m.ownerId, 'monitor.check_completed', message, { monitor_id: m.id, run_id: providerRunId, verification_id: vid });
   startJob(vid);
-  return { alert: false, outcome: 'recheck_started' };
+  return true;
+}
+
+/**
+ * Scheduled re-check. A page monitor only notices what a plain page fetch can see, and some official pages (for
+ * example California licence profiles) load their status by script, so the page text never changes when the status
+ * does. Re-verifying every monitored record on a fixed interval closes that gap honestly. Run by the maintenance cron.
+ */
+export async function runScheduledRechecks(intervalHours = Number(process.env.VERITY_RECHECK_HOURS ?? 24), max = 3): Promise<number> {
+  const cutoff = new Date(Date.now() - intervalHours * 3_600_000);
+  let started = 0;
+  for (const m of await db.monitor.findMany({ where: { status: 'active' }, orderBy: { createdAt: 'asc' } })) {
+    if (started >= max) break; // one invocation has a time limit; the next run picks up the rest
+    const last = await db.verification.findFirst({ where: { monitorId: m.id, kind: 'recheck' }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } });
+    if ((last?.createdAt ?? m.createdAt) > cutoff) continue;
+    if (await startRecheck(m, JSON.parse(m.configJson), null, 'scheduled', `Scheduled re-check started for ${m.subjectName}`)) started++;
+  }
+  return started;
 }
 
 /** Called when a re-verification started by a monitor finishes. */
