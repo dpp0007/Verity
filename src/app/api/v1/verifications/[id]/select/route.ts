@@ -4,6 +4,8 @@ import { getOwner, handle, readJson } from '@/server/api';
 import { selectCandidate } from '@/server/verifications';
 import { toResult } from '@/server/serialize';
 
+export const maxDuration = 300; // seconds: the verification runs after the response (see startJob)
+
 export const POST = handle(async (req, { params }: { params: Promise<{ id: string }> }) => {
   const owner = await getOwner(req);
   const { id } = await params;

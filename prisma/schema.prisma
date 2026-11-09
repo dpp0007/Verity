@@ -1,9 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"] // the second is the Vercel runtime
 }
 
-// SQLite keeps local setup zero-config. For PostgreSQL change `provider` and DATABASE_URL;
-// JSON is stored as text so the schema is portable.
+// SQLite keeps local setup zero-config. In production (Vercel) the same schema runs on hosted libSQL (Turso) through a
+// driver adapter: see src/lib/db.ts. JSON is stored as text, so the schema is portable to PostgreSQL if ever needed.
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")

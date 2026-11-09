@@ -3,7 +3,10 @@ import { z } from 'zod';
 const blank = (v: unknown) => (v === '' ? undefined : v);
 const Env = z.object({
   TINYFISH_API_KEY: z.string().min(1, 'TINYFISH_API_KEY is required'),
-  DATABASE_URL: z.string().min(1),
+  DATABASE_URL: z.preprocess(blank, z.string().optional()), // local SQLite file; unused when TURSO_DATABASE_URL is set
+  TURSO_DATABASE_URL: z.preprocess(blank, z.string().optional()),
+  TURSO_AUTH_TOKEN: z.preprocess(blank, z.string().optional()),
+  CRON_SECRET: z.preprocess(blank, z.string().min(8, 'CRON_SECRET must be at least 8 characters').optional()),
   APP_URL: z.string().url(),
   WEBHOOK_SECRET: z.preprocess(blank, z.string().min(8, 'WEBHOOK_SECRET must be at least 8 characters').optional()),
   VERITY_API_KEYS: z.preprocess(blank, z.string().optional()),

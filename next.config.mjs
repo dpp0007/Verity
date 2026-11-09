@@ -11,7 +11,7 @@ if (process.env.NODE_ENV !== 'production' && process.env.VERITY_E2E !== '1' && e
 
 /** @type {import('next').NextConfig} */
 export default {
-  serverExternalPackages: ['@prisma/client'],
+  serverExternalPackages: ['@prisma/client', '@prisma/adapter-libsql', '@libsql/client', 'libsql'], // native / server-only: not bundled
   poweredByHeader: false,
   async headers() {
     return [{ source: '/(.*)', headers: [

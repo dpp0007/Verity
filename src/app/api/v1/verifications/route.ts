@@ -6,10 +6,11 @@ import { createVerification } from '@/server/verifications';
 import { toResult } from '@/server/serialize';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // seconds: the verification runs after the response (see startJob)
 
 export const POST = handle(async (req) => {
   const owner = await getOwner(req);
-  rateLimit(`verify:${owner}`, 10);
+  await rateLimit('verify', owner);
   const body = await readJson(req, CreateVerificationBody);
   const id = await createVerification(owner, body, { idempotencyKey: req.headers.get('idempotency-key')?.slice(0, 100) || null });
   return NextResponse.json(await toResult(id), { status: 202 });

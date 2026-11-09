@@ -3,18 +3,25 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { ZodError, type ZodTypeAny, type z } from 'zod';
 import { ApiError, errorBody } from '@/lib/errors';
+import { db } from '@/lib/db';
 import { log } from '@/lib/log';
 
 const MAX_BODY = 64 * 1024;
-const hits = new Map<string, number[]>();
+const WINDOW_MS = 60_000;
+/** What each action may do per owner per minute. Each one spends TinyFish credits, so that is what is limited. */
+const LIMITS = { verify: 10, monitor: 20, check: 6 } as const;
 
-/** In-memory sliding window; per-process (see README for multi-instance deployments). */
-export function rateLimit(key: string, max: number, windowMs = 60_000) {
-  const now = Date.now();
-  const arr = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
-  if (arr.length >= max) throw new ApiError(429, 'rate_limited', 'Too many requests. Please wait a moment and try again.', undefined, true);
-  arr.push(now);
-  hits.set(key, arr);
+/**
+ * Rate limit by counting the rows the action already creates, so it holds across every serverless instance (an
+ * in-memory counter would not). Requests that fail validation create nothing and cost no credits, so they are not counted.
+ */
+export async function rateLimit(kind: keyof typeof LIMITS, owner: string) {
+  const since = new Date(Date.now() - WINDOW_MS);
+  const used =
+    kind === 'verify' ? await db.verification.count({ where: { ownerId: owner, kind: 'verify', createdAt: { gt: since } } })
+    : kind === 'monitor' ? await db.activityEvent.count({ where: { ownerId: owner, type: { startsWith: 'monitor.' }, createdAt: { gt: since } } })
+    : await db.monitorRun.count({ where: { source: 'manual', createdAt: { gt: since }, monitor: { ownerId: owner } } });
+  if (used >= LIMITS[kind]) throw new ApiError(429, 'rate_limited', 'Too many requests. Please wait a moment and try again.', undefined, true);
 }
 
 export const safeEqual = (a: string, b: string) => {

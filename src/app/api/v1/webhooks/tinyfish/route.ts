@@ -3,6 +3,7 @@ import { handle } from '@/server/api';
 import { handleMonitorWebhook } from '@/server/webhook';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // seconds: the verification runs after the response (see startJob)
 
 // TinyFish documents no webhook signature, so the shared secret travels in the URL we register
 // (?token=WEBHOOK_SECRET) and every delivery is deduplicated. See docs/TINYFISH.md.

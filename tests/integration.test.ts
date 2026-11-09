@@ -5,8 +5,10 @@ import { ApiError } from '@/lib/errors';
 import { createVerification, retryVerification, selectCandidate } from '@/server/verifications';
 import { settleJobs } from '@/server/verify';
 import { toResult } from '@/server/serialize';
-import { changeStatus, checkNow, createMonitor, getMonitorView, listAlerts, removeMonitor } from '@/server/monitoring';
+import { changeStatus, checkNow, createMonitor, getMonitorView, listAlerts, removeMonitor, runScheduledRechecks } from '@/server/monitoring';
 import { handleMonitorWebhook } from '@/server/webhook';
+import { maintenance } from '@/server/maintenance';
+import { GET as cronGet } from '@/app/api/cron/maintenance/route';
 import { FakeTinyFish } from './fakeTinyFish';
 
 const fake = new FakeTinyFish();
@@ -72,21 +74,30 @@ describe('verification workflow', () => {
     expect(r.history.map((h) => h.type)).toEqual(expect.arrayContaining(['verification.requested', 'registry.discovered', 'search.completed', 'verification.completed']));
     expect(await db.evidenceSnapshot.count()).toBe(1);
   });
-  it('downgrades to medium when excerpts are on neither the fetched page nor a matching second read', async () => {
+  it('downgrades to medium when excerpts are on neither the fetched page nor any two agreeing browser reads', async () => {
     fake.pageText = '# Record\nSomething else';
-    fake.detailSecond = detail({ status_text: 'Expired' });
+    fake.detailSecond = [detail({ status_text: 'Expired' }), detail({ status_text: 'Suspended' })]; // three different reads
     const r = await verify();
     expect(r.verification.confidence).toBe('medium');
     expect(r.verification.outcome).toBe('partially_verified');
     expect(r.verification.evidence.some((e) => e.validated)).toBe(false);
     expect(r.verification.limitations.join(' ')).toMatch(/did not agree/);
   });
+  it('lets two agreeing later reads overrule an outlier first read, and says so', async () => {
+    fake.pageText = '# Record\nStatus is rendered by script';
+    fake.detailResult = detail({ status_text: 'Suspended', excerpts: [{ field: 'status', text: 'Status: Suspended' }] }); // the misread
+    fake.detailSecond = detail(); // reads 2 and 3 both say Active
+    const r = await verify();
+    expect(r.record?.status).toBe('active');
+    expect(r.verification.limitations.join(' ')).toMatch(/discarded in favour of the consensus/);
+    expect(r.verification.confidence).toBe('high');
+  });
   it('confirms by a second browser read when Fetch cannot see the status, and says so', async () => {
     fake.pageText = '# Record\nStatus is rendered by script';
     const r = await verify();
     expect(r.verification.confidence).toBe('high');
     expect(r.verification.evidence.every((e) => e.validated)).toBe(true);
-    expect(r.verification.limitations.join(' ')).toMatch(/second, separate browser read/);
+    expect(r.verification.limitations.join(' ')).toMatch(/Confirmed by 2 separate browser reads/);
   });
   it('keeps unfamiliar statuses unknown and missing fields null with explanations', async () => {
     fake.detailResult = detail({ status_text: 'Under review', expiry_date_text: null, disciplinary_section_visible: false, excerpts: [] });
@@ -122,6 +133,19 @@ describe('verification workflow', () => {
     expect(r.verification.source_url).toBeTruthy();
     expect(r.verification.limitations.join(' ')).toMatch(/does not prove/);
   });
+  it.each([
+    ['maintenance page', { site_message: 'Our database is currently undergoing scheduled maintenance. Please try again later.', notes: null }],
+    ['bot check described only in the notes', { site_message: null, notes: 'The search was blocked by a CAPTCHA, so no results were returned.' }],
+  ])('never reports a %s as "not found", even when the agent says the search ran and found nothing', async (_n, extra) => {
+    fake.searchResult = { search_performed: true, no_results: true, candidates: [], ...extra };
+    const r = await verify();
+    expect(r.verification.outcome).toBe('temporarily_unavailable');
+    expect(r.state).toBe('failed');
+  });
+  it('still reports a genuine empty search as not_found, even when the agent copies the register\'s own no-records text into site_message', async () => {
+    fake.searchResult = { search_performed: true, no_results: true, candidates: [], site_message: 'No records found.', notes: 'The register answered: no records match this name.' };
+    expect((await verify()).verification.outcome).toBe('not_found');
+  });
   it('treats an incomplete search as unavailable, never as not_found', async () => {
     fake.searchResult = { search_performed: false, no_results: false, candidates: [], notes: 'form would not submit' };
     const r = await verify();
@@ -142,7 +166,7 @@ describe('verification workflow', () => {
   });
   it('continues with a limitation when the independent fetch fails', async () => {
     fake.fetchError = 'timeout';
-    fake.detailSecond = detail({ status_text: 'Expired' });
+    fake.detailSecond = [detail({ status_text: 'Expired' }), detail({ status_text: 'Suspended' })];
     const r = await verify();
     expect(r.state).toBe('completed');
     expect(r.verification.confidence).not.toBe('high');
@@ -234,6 +258,12 @@ describe('company registers in any country (discovered registry)', () => {
     delete process.env.SANDBOX_API_KEY;
     try { await expect(createVerification(OWNER, { ...co, country: 'IN' })).rejects.toMatchObject({ code: 'registry_not_configured', status: 422 }); } finally { process.env.SANDBOX_API_KEY = saved; }
     expect(fake.calls).toHaveLength(0);
+  });
+  it('refuses a register known to be behind a bot challenge up front, before any provider call', async () => {
+    const before = fake.calls.length;
+    await expect(createVerification(OWNER, { ...co, country: 'IE' })).rejects.toMatchObject({ status: 422, code: 'unsupported_jurisdiction', message: expect.stringMatching(/Cloudflare/) });
+    await expect(createVerification(OWNER, { ...co, country: 'SG' })).rejects.toMatchObject({ status: 422, code: 'unsupported_jurisdiction', message: expect.stringMatching(/anti-bot/) });
+    expect(fake.calls.length).toBe(before);
   });
   it('rejects a non-official source_url and non-company types for unconfigured countries', async () => {
     await expect(createVerification(OWNER, { ...co, source_url: 'https://opencorporates.com/x' })).rejects.toMatchObject({ code: 'invalid_source_url' });
@@ -383,6 +413,20 @@ describe('monitoring', () => {
     await settleJobs();
     expect(await listAlerts(OWNER)).toHaveLength(1);
   });
+  it('scheduled re-check alerts on a status change even though the page text never changes (script-rendered status)', async () => {
+    const vid = await verified();
+    const m = await createMonitor(OWNER, vid);
+    fake.detailResult = detail({ status_text: 'Suspended', excerpts: [{ field: 'status', text: 'Status: Suspended' }] }); // fake.pageText is untouched
+    expect(await runScheduledRechecks(24)).toBe(0); // not due yet
+    expect(await runScheduledRechecks(0)).toBe(1);
+    await settleJobs();
+    const alerts = await listAlerts(OWNER);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatchObject({ field: 'status', previous: 'active', next: 'suspended', run_id: null });
+    const view = await getMonitorView(OWNER, m.id);
+    expect(view.runs.map((r) => r.source)).toContain('scheduled');
+    expect(await runScheduledRechecks(0)).toBe(0); // the 10-minute cooldown stops a repeat
+  });
   it('records a monitoring error (no alert) when the check failed', async () => {
     const m = await createMonitor(OWNER, await verified());
     const out = await handleMonitorWebhook('test-secret-123', hook('wh2', { outcome: null, results: [], errors: [{ url: RECORD_URL, error: 'target_unreachable' }] }));
@@ -451,5 +495,43 @@ describe('monitoring', () => {
   it('isolates monitors between owners', async () => {
     const m = await createMonitor(OWNER, await verified());
     await expect(getMonitorView('own_' + 'c'.repeat(32), m.id)).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('maintenance cron (Vercel)', () => {
+  const call = (auth?: string) => cronGet(new Request('https://verity.test/api/cron/maintenance', { headers: auth ? { authorization: auth } : {} }));
+  afterEach(() => { delete process.env.CRON_SECRET; });
+  it('refuses every request unless CRON_SECRET is set and matches', async () => {
+    expect((await call()).status).toBe(401);
+    process.env.CRON_SECRET = 'cron-secret-123';
+    expect((await call()).status).toBe(401);
+    expect((await call('Bearer wrong-secret-123')).status).toBe(401);
+    const ok = await call('Bearer cron-secret-123');
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ requeued: 0, rechecks_started: 0 });
+  });
+  it('re-drives a job that was queued but never started, and fails one that died mid-run', async () => {
+    const queued = (await verify()).id;
+    await db.verification.update({ where: { id: queued }, data: { state: 'queued', stage: null, outcome: null, resultJson: null, errorJson: null, createdAt: new Date(Date.now() - 5 * 60_000) } });
+    const dead = (await verify({ ...input, name: 'Someone Else' })).id;
+    await db.verification.update({ where: { id: dead }, data: { state: 'running', updatedAt: new Date(Date.now() - 20 * 60_000) } });
+    expect(await maintenance()).toMatchObject({ requeued: 1 });
+    await settleJobs();
+    expect((await toResult(queued))!.state).toBe('completed');
+    const failed = (await toResult(dead))!;
+    expect(failed.state).toBe('failed');
+    expect(failed.error?.code).toBe('interrupted');
+  });
+});
+
+describe('rate limit (counts rows, so it holds across serverless instances)', () => {
+  it('allows 10 verifications a minute per owner and then answers 429, without counting other owners or re-checks', async () => {
+    const { rateLimit } = await import('@/server/api');
+    for (let i = 0; i < 10; i++) { await rateLimit('verify', OWNER); await createVerification(OWNER, { ...input, name: `Person ${i}` }); }
+    await settleJobs();
+    await expect(rateLimit('verify', OWNER)).rejects.toMatchObject({ status: 429, code: 'rate_limited', retryable: true });
+    await expect(rateLimit('verify', 'someone_else')).resolves.toBeUndefined();
+    await db.verification.updateMany({ where: { ownerId: OWNER }, data: { createdAt: new Date(Date.now() - 120_000) } });
+    await expect(rateLimit('verify', OWNER)).resolves.toBeUndefined(); // the window has passed
   });
 });

@@ -3,7 +3,7 @@ import { VerificationResultSchema, type VerificationResult } from '@/lib/schemas
 import { registryOf } from './registry';
 import type { StoredCandidate, StoredResult } from './verify';
 
-const STALE_MS = 15 * 60_000;
+const STALE_MS = 8 * 60_000; // routes allow 300 s (Vercel maxDuration), so a 'running' job older than this has died
 
 /** Jobs that died with their process are surfaced as failed (retryable) instead of spinning forever. */
 export async function sweepStale(id?: string) {

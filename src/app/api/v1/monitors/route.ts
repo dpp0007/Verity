@@ -9,7 +9,7 @@ export const GET = handle(async (req) => ({ monitors: await listMonitors(await g
 
 export const POST = handle(async (req) => {
   const owner = await getOwner(req);
-  rateLimit(`monitor:${owner}`, 10);
+  await rateLimit('monitor', owner);
   const { verification_id } = await readJson(req, z.object({ verification_id: z.string().min(1) }));
   return NextResponse.json(await createMonitor(owner, verification_id), { status: 201 });
 });

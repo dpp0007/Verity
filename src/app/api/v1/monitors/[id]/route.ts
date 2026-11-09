@@ -11,7 +11,7 @@ export const GET = handle(async (req, { params }: Ctx) => getMonitorView(await g
 /** PATCH { status: "paused" | "active" } pauses or resumes the real TinyFish monitor. */
 export const PATCH = handle(async (req, { params }: Ctx) => {
   const owner = await getOwner(req);
-  rateLimit(`monitor:${owner}`, 30);
+  await rateLimit('monitor', owner);
   const { status } = await readJson(req, z.object({ status: z.enum(['paused', 'active']) }));
   return changeStatus(owner, (await params).id, status === 'paused' ? 'pause' : 'resume');
 });
