@@ -4,6 +4,8 @@ Verity verifies professional licences and business registrations directly agains
 
 > Records reflect the source and the time checked. Verity does not guarantee identity, suitability for employment, or legal compliance.
 
+**Reviewing this?** See [SUBMISSION.md](SUBMISSION.md): what it is, where TinyFish is used, and a 2-minute way to test it.
+
 ## Status — read this first
 
 | Area | State |
