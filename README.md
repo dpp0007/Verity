@@ -8,7 +8,7 @@ Verity verifies professional licences and business registrations directly agains
 
 | Area | State |
 |---|---|
-| App, API, DB, UI, monitoring lifecycle | Implemented; 96 unit/integration tests against a simulated TinyFish provider |
+| App, API, DB, UI, monitoring lifecycle | Implemented; 114 unit/integration tests against a simulated TinyFish provider |
 | Real TinyFish calls (Search, Fetch, Agent, Monitor) | **Working live** (2026-11-09) |
 | Live registry verification | Companies House, the Medical Board of California (by licence number) and the GMC reach `verified`/high in live runs. CSLB, NMC and discovered company registers run end to end with lower confidence or intermittently. Ireland and Singapore are refused up front (bot protection). See [docs/REGISTRIES.md](docs/REGISTRIES.md) |
 | Monitoring | Create, pause, resume, check-now and delete work against the real Monitor API. `npm run monitor-demo` proves live change detection (3 of 3 runs reported `changed` on a page that updates every minute). Scheduled re-checks cover pages whose status loads by script. Automatic webhooks need a public https `APP_URL` and have **not** been demonstrated from a local run |
@@ -23,7 +23,7 @@ Next.js 15 (App Router) · TypeScript · Tailwind 3 · Prisma 6 · SQLite locall
 ## Setup
 
 ```bash
-npm install
+npm install                 # also runs `prisma generate` (postinstall)
 cp .env.example .env        # fill TINYFISH_API_KEY, WEBHOOK_SECRET (>= 8 chars), APP_URL
 npx prisma migrate deploy   # creates prisma/dev.db
 npm run dev                 # http://localhost:3000
